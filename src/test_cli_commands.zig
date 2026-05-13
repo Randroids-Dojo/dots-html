@@ -56,7 +56,7 @@ test "cli: init creates dots directory" {
     try std.testing.expect(stat.kind == .directory);
 }
 
-test "cli: add creates markdown file" {
+test "cli: add creates html file" {
     const allocator = std.testing.allocator;
 
     const test_dir = setupTestDirOrPanic(allocator);
@@ -77,8 +77,8 @@ test "cli: add creates markdown file" {
     const id = trimNewline(result.stdout);
     try std.testing.expect(id.len > 0);
 
-    // Verify markdown file exists
-    const md_path = std.fmt.allocPrint(allocator, "{s}/.dots/{s}.md", .{ test_dir, id }) catch |err| {
+    // Verify html file exists
+    const md_path = std.fmt.allocPrint(allocator, "{s}/.dots/{s}.html", .{ test_dir, id }) catch |err| {
         std.debug.panic("path: {}", .{err});
     };
     defer allocator.free(md_path);
@@ -629,7 +629,7 @@ test "cli: tree ignores missing parent" {
         \\created-at: 2024-01-01T00:00:00Z
         \\---
     ;
-    dots_dir.writeFile(.{ .sub_path = "orphan/orphan-child.md", .data = orphan }) catch |err| {
+    dots_dir.writeFile(.{ .sub_path = "orphan/orphan-child.html", .data = orphan }) catch |err| {
         std.debug.panic("write orphan: {}", .{err});
     };
 
@@ -686,7 +686,7 @@ test "cli: fix promotes orphan children" {
         \\created-at: 2024-01-01T00:00:00Z
         \\---
     ;
-    dots_dir.writeFile(.{ .sub_path = "orphan/orphan-child.md", .data = orphan }) catch |err| {
+    dots_dir.writeFile(.{ .sub_path = "orphan/orphan-child.html", .data = orphan }) catch |err| {
         std.debug.panic("write orphan: {}", .{err});
     };
 
@@ -708,7 +708,7 @@ test "cli: fix promotes orphan children" {
         \\  ""
     ).expectEqual(fix.stderr);
 
-    _ = dots_dir.statFile("orphan-child.md") catch |err| {
+    _ = dots_dir.statFile("orphan-child.html") catch |err| {
         std.debug.panic("stat moved orphan: {}", .{err});
     };
 

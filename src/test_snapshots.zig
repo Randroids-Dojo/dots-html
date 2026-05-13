@@ -27,7 +27,7 @@ test "snap: simple struct" {
     ).expectEqual(data);
 }
 
-test "snap: markdown frontmatter format" {
+test "snap: html document format" {
     const allocator = std.testing.allocator;
 
     const test_dir = setupTestDirOrPanic(allocator);
@@ -50,8 +50,8 @@ test "snap: markdown frontmatter format" {
 
     const id = trimNewline(add.stdout);
 
-    // Read the markdown file
-    const md_path = std.fmt.allocPrint(allocator, "{s}/.dots/{s}.md", .{ test_dir, id }) catch |err| {
+    // Read the html file
+    const md_path = std.fmt.allocPrint(allocator, "{s}/.dots/{s}.html", .{ test_dir, id }) catch |err| {
         std.debug.panic("path: {}", .{err});
     };
     defer allocator.free(md_path);
@@ -71,8 +71,8 @@ test "snap: markdown frontmatter format" {
         if (!first) try normalized.append(allocator, '\n');
         first = false;
 
-        if (std.mem.startsWith(u8, line, "created-at:")) {
-            try normalized.appendSlice(allocator, "created-at: <TIMESTAMP>");
+        if (std.mem.startsWith(u8, line, "<meta name=\"dot-created-at\"")) {
+            try normalized.appendSlice(allocator, "<meta name=\"dot-created-at\" content=\"<TIMESTAMP>\">");
         } else {
             try normalized.appendSlice(allocator, line);
         }
@@ -81,15 +81,26 @@ test "snap: markdown frontmatter format" {
     const oh = OhSnap{};
     try oh.snap(@src(),
         \\[]u8
-        \\  "---
-        \\title: Test snapshot task
-        \\status: open
-        \\priority: 1
-        \\issue-type: task
-        \\created-at: <TIMESTAMP>
-        \\---
-        \\
+        \\  "<!doctype html>
+        \\<html>
+        \\<head>
+        \\<meta charset=\"utf-8\">
+        \\<title>Test snapshot task</title>
+        \\<meta name=\"dot-title\" content=\"Test snapshot task\">
+        \\<meta name=\"dot-status\" content=\"open\">
+        \\<meta name=\"dot-priority\" content=\"1\">
+        \\<meta name=\"dot-issue-type\" content=\"task\">
+        \\<meta name=\"dot-created-at\" content=\"<TIMESTAMP>\">
+        \\</head>
+        \\<body>
+        \\<article>
+        \\<h1>Test snapshot task</h1>
+        \\<section id=\"description\">
         \\This is a description
+        \\</section>
+        \\</article>
+        \\</body>
+        \\</html>
         \\"
     ).expectEqual(normalized.items);
 }

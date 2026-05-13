@@ -1,6 +1,6 @@
 # Dots - Agent Instructions
 
-Fast CLI issue tracker in Zig with markdown storage.
+Fast CLI issue tracker in Zig with html storage.
 
 ## Communication
 

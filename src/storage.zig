@@ -11,6 +11,8 @@ const MAX_ID_LEN = 128; // Maximum ID length (validated in validateId)
 const MAX_ISSUE_FILE_SIZE = 1024 * 1024; // 1MB max issue file
 const MAX_CONFIG_SIZE = 64 * 1024; // 64KB max config file
 const DEFAULT_PRIORITY: i64 = 2; // Default priority for new issues
+const ISSUE_EXT = ".html";
+const LEGACY_ISSUE_EXT = ".md";
 
 // Errors
 pub const StorageError = error{
@@ -41,6 +43,15 @@ pub fn validateId(id: []const u8) StorageError!void {
         if (c < 0x20 or c == 0x7F) return StorageError.InvalidId;
         if (c == '#' or c == ':' or c == '\'' or c == '"') return StorageError.InvalidId;
     }
+}
+
+fn hasIssueExt(name: []const u8) bool {
+    return std.mem.endsWith(u8, name, ISSUE_EXT) or std.mem.endsWith(u8, name, LEGACY_ISSUE_EXT);
+}
+
+fn issueIdFromFilename(name: []const u8) []const u8 {
+    if (std.mem.endsWith(u8, name, ISSUE_EXT)) return name[0 .. name.len - ISSUE_EXT.len];
+    return name[0 .. name.len - LEGACY_ISSUE_EXT.len];
 }
 
 /// Write content to file atomically (write to unique .tmp, sync, rename)
@@ -338,9 +349,21 @@ const ParseResult = struct {
     // Track allocated strings for cleanup
     allocated_blocks: [][]const u8,
     allocated_title: ?[]const u8 = null,
+    allocated_issue_type: ?[]const u8 = null,
+    allocated_assignee: ?[]const u8 = null,
+    allocated_created_at: ?[]const u8 = null,
+    allocated_closed_at: ?[]const u8 = null,
+    allocated_close_reason: ?[]const u8 = null,
+    allocated_description: ?[]const u8 = null,
 
     pub fn deinit(self: *const ParseResult, allocator: Allocator) void {
         if (self.allocated_title) |t| allocator.free(t);
+        if (self.allocated_issue_type) |s| allocator.free(s);
+        if (self.allocated_assignee) |s| allocator.free(s);
+        if (self.allocated_created_at) |s| allocator.free(s);
+        if (self.allocated_closed_at) |s| allocator.free(s);
+        if (self.allocated_close_reason) |s| allocator.free(s);
+        if (self.allocated_description) |s| allocator.free(s);
         for (self.allocated_blocks) |b| allocator.free(b);
         allocator.free(self.allocated_blocks);
     }
@@ -521,6 +544,160 @@ fn parseFrontmatter(allocator: Allocator, content: []const u8) !ParseResult {
     };
 }
 
+fn appendHtmlEscaped(buf: *std.ArrayList(u8), allocator: Allocator, value: []const u8) !void {
+    for (value) |c| {
+        switch (c) {
+            '&' => try buf.appendSlice(allocator, "&amp;"),
+            '<' => try buf.appendSlice(allocator, "&lt;"),
+            '>' => try buf.appendSlice(allocator, "&gt;"),
+            '"' => try buf.appendSlice(allocator, "&quot;"),
+            '\'' => try buf.appendSlice(allocator, "&#39;"),
+            else => try buf.append(allocator, c),
+        }
+    }
+}
+
+fn htmlUnescape(allocator: Allocator, value: []const u8) ![]const u8 {
+    var buf: std.ArrayList(u8) = .{};
+    errdefer buf.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < value.len) {
+        if (std.mem.startsWith(u8, value[i..], "&amp;")) {
+            try buf.append(allocator, '&');
+            i += 5;
+        } else if (std.mem.startsWith(u8, value[i..], "&lt;")) {
+            try buf.append(allocator, '<');
+            i += 4;
+        } else if (std.mem.startsWith(u8, value[i..], "&gt;")) {
+            try buf.append(allocator, '>');
+            i += 4;
+        } else if (std.mem.startsWith(u8, value[i..], "&quot;")) {
+            try buf.append(allocator, '"');
+            i += 6;
+        } else if (std.mem.startsWith(u8, value[i..], "&#39;")) {
+            try buf.append(allocator, '\'');
+            i += 5;
+        } else {
+            try buf.append(allocator, value[i]);
+            i += 1;
+        }
+    }
+
+    return buf.toOwnedSlice(allocator);
+}
+
+fn getHtmlMeta(allocator: Allocator, content: []const u8, name: []const u8) !?[]const u8 {
+    const prefix = try std.fmt.allocPrint(allocator, "<meta name=\"dot-{s}\" content=\"", .{name});
+    defer allocator.free(prefix);
+
+    const start = std.mem.indexOf(u8, content, prefix) orelse return null;
+    const value_start = start + prefix.len;
+    const rel_end = std.mem.indexOfScalar(u8, content[value_start..], '"') orelse return StorageError.InvalidFrontmatter;
+    return try htmlUnescape(allocator, content[value_start .. value_start + rel_end]);
+}
+
+fn parseHtmlDocument(allocator: Allocator, content: []const u8) !ParseResult {
+    var fm = Frontmatter{};
+    var blocks_list: std.ArrayList([]const u8) = .{};
+    var allocated_title: ?[]const u8 = null;
+    var allocated_issue_type: ?[]const u8 = null;
+    var allocated_assignee: ?[]const u8 = null;
+    var allocated_created_at: ?[]const u8 = null;
+    var allocated_closed_at: ?[]const u8 = null;
+    var allocated_close_reason: ?[]const u8 = null;
+    var allocated_description: ?[]const u8 = null;
+    errdefer {
+        if (allocated_title) |s| allocator.free(s);
+        if (allocated_issue_type) |s| allocator.free(s);
+        if (allocated_assignee) |s| allocator.free(s);
+        if (allocated_created_at) |s| allocator.free(s);
+        if (allocated_closed_at) |s| allocator.free(s);
+        if (allocated_close_reason) |s| allocator.free(s);
+        if (allocated_description) |s| allocator.free(s);
+        for (blocks_list.items) |b| allocator.free(b);
+        blocks_list.deinit(allocator);
+    }
+
+    allocated_title = try getHtmlMeta(allocator, content, "title") orelse return StorageError.InvalidFrontmatter;
+    fm.title = allocated_title.?;
+
+    if (try getHtmlMeta(allocator, content, "status")) |value| {
+        defer allocator.free(value);
+        fm.status = Status.parse(value) orelse return StorageError.InvalidStatus;
+    }
+    if (try getHtmlMeta(allocator, content, "priority")) |value| {
+        defer allocator.free(value);
+        fm.priority = std.fmt.parseInt(i64, value, 10) catch return StorageError.InvalidFrontmatter;
+    }
+    allocated_issue_type = try getHtmlMeta(allocator, content, "issue-type");
+    if (allocated_issue_type) |value| fm.issue_type = value;
+    allocated_assignee = try getHtmlMeta(allocator, content, "assignee");
+    if (allocated_assignee) |value| {
+        if (value.len > 0) fm.assignee = value;
+    }
+    allocated_created_at = try getHtmlMeta(allocator, content, "created-at") orelse return StorageError.InvalidFrontmatter;
+    fm.created_at = allocated_created_at.?;
+    allocated_closed_at = try getHtmlMeta(allocator, content, "closed-at");
+    if (allocated_closed_at) |value| {
+        if (value.len > 0) fm.closed_at = value;
+    }
+    allocated_close_reason = try getHtmlMeta(allocator, content, "close-reason");
+    if (allocated_close_reason) |value| {
+        if (value.len > 0) fm.close_reason = value;
+    }
+
+    const block_prefix = "<meta name=\"dot-block\" content=\"";
+    var search_at: usize = 0;
+    while (std.mem.indexOf(u8, content[search_at..], block_prefix)) |rel_start| {
+        const value_start = search_at + rel_start + block_prefix.len;
+        const rel_end = std.mem.indexOfScalar(u8, content[value_start..], '"') orelse return StorageError.InvalidFrontmatter;
+        const block_id = try htmlUnescape(allocator, content[value_start .. value_start + rel_end]);
+        validateId(block_id) catch {
+            allocator.free(block_id);
+            return StorageError.InvalidFrontmatter;
+        };
+        try blocks_list.append(allocator, block_id);
+        search_at = value_start + rel_end + 1;
+    }
+
+    const desc_start_marker = "<section id=\"description\">";
+    const desc_end_marker = "</section>";
+    const description = if (std.mem.indexOf(u8, content, desc_start_marker)) |start| blk: {
+        const value_start = start + desc_start_marker.len;
+        const rel_end = std.mem.indexOf(u8, content[value_start..], desc_end_marker) orelse return StorageError.InvalidFrontmatter;
+        allocated_description = try htmlUnescape(allocator, std.mem.trim(u8, content[value_start .. value_start + rel_end], "\n\r\t "));
+        break :blk allocated_description.?;
+    } else "";
+
+    const allocated_blocks = try blocks_list.toOwnedSlice(allocator);
+    fm.blocks = allocated_blocks;
+
+    if (fm.title.len == 0 or fm.created_at.len == 0) {
+        return StorageError.InvalidFrontmatter;
+    }
+
+    return ParseResult{
+        .frontmatter = fm,
+        .description = description,
+        .allocated_blocks = allocated_blocks,
+        .allocated_title = allocated_title,
+        .allocated_issue_type = allocated_issue_type,
+        .allocated_assignee = allocated_assignee,
+        .allocated_created_at = allocated_created_at,
+        .allocated_closed_at = allocated_closed_at,
+        .allocated_close_reason = allocated_close_reason,
+        .allocated_description = allocated_description,
+    };
+}
+
+fn parseIssueDocument(allocator: Allocator, content: []const u8) !ParseResult {
+    if (std.mem.startsWith(u8, content, "---\n")) {
+        return parseFrontmatter(allocator, content);
+    }
+    return parseHtmlDocument(allocator, content);
+}
+
 /// Returns true if string needs YAML quoting
 fn needsYamlQuoting(s: []const u8) bool {
     if (s.len == 0) return true;
@@ -554,57 +731,53 @@ fn writeYamlValue(buf: *std.ArrayList(u8), allocator: Allocator, value: []const 
     try buf.append(allocator, '"');
 }
 
-fn serializeFrontmatter(allocator: Allocator, issue: Issue) ![]u8 {
+fn writeMeta(buf: *std.ArrayList(u8), allocator: Allocator, name: []const u8, value: []const u8) !void {
+    try buf.appendSlice(allocator, "<meta name=\"dot-");
+    try buf.appendSlice(allocator, name);
+    try buf.appendSlice(allocator, "\" content=\"");
+    try appendHtmlEscaped(buf, allocator, value);
+    try buf.appendSlice(allocator, "\">\n");
+}
+
+fn serializeIssueDocument(allocator: Allocator, issue: Issue) ![]u8 {
     var buf: std.ArrayList(u8) = .{};
     errdefer buf.deinit(allocator);
 
-    try buf.appendSlice(allocator, "---\n");
-    try buf.appendSlice(allocator, "title: ");
-    try writeYamlValue(&buf, allocator, issue.title);
-    try buf.appendSlice(allocator, "\nstatus: ");
-    try buf.appendSlice(allocator, issue.status.toString());
-    try buf.appendSlice(allocator, "\npriority: ");
+    try buf.appendSlice(allocator, "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>");
+    try appendHtmlEscaped(&buf, allocator, issue.title);
+    try buf.appendSlice(allocator, "</title>\n");
+    try writeMeta(&buf, allocator, "title", issue.title);
+    try writeMeta(&buf, allocator, "status", issue.status.toString());
 
     var priority_buf: [21]u8 = undefined; // i64 max is 19 digits + sign
     const priority_str = std.fmt.bufPrint(&priority_buf, "{d}", .{issue.priority}) catch return error.OutOfMemory;
-    try buf.appendSlice(allocator, priority_str);
+    try writeMeta(&buf, allocator, "priority", priority_str);
 
-    try buf.appendSlice(allocator, "\nissue-type: ");
-    try writeYamlValue(&buf, allocator, issue.issue_type);
+    try writeMeta(&buf, allocator, "issue-type", issue.issue_type);
 
     if (issue.assignee) |assignee| {
-        try buf.appendSlice(allocator, "\nassignee: ");
-        try writeYamlValue(&buf, allocator, assignee);
+        try writeMeta(&buf, allocator, "assignee", assignee);
     }
 
-    try buf.appendSlice(allocator, "\ncreated-at: ");
-    try writeYamlValue(&buf, allocator, issue.created_at);
+    try writeMeta(&buf, allocator, "created-at", issue.created_at);
 
     if (issue.closed_at) |closed_at| {
-        try buf.appendSlice(allocator, "\nclosed-at: ");
-        try writeYamlValue(&buf, allocator, closed_at);
+        try writeMeta(&buf, allocator, "closed-at", closed_at);
     }
 
     if (issue.close_reason) |reason| {
-        try buf.appendSlice(allocator, "\nclose-reason: ");
-        try writeYamlValue(&buf, allocator, reason);
+        try writeMeta(&buf, allocator, "close-reason", reason);
     }
 
-    if (issue.blocks.len > 0) {
-        try buf.appendSlice(allocator, "\nblocks:");
-        for (issue.blocks) |block_id| {
-            try buf.appendSlice(allocator, "\n  - ");
-            try buf.appendSlice(allocator, block_id);
-        }
+    for (issue.blocks) |block_id| {
+        try writeMeta(&buf, allocator, "block", block_id);
     }
 
-    try buf.appendSlice(allocator, "\n---\n");
-
-    if (issue.description.len > 0) {
-        try buf.appendSlice(allocator, "\n");
-        try buf.appendSlice(allocator, issue.description);
-        try buf.appendSlice(allocator, "\n");
-    }
+    try buf.appendSlice(allocator, "</head>\n<body>\n<article>\n<h1>");
+    try appendHtmlEscaped(&buf, allocator, issue.title);
+    try buf.appendSlice(allocator, "</h1>\n<section id=\"description\">\n");
+    try appendHtmlEscaped(&buf, allocator, issue.description);
+    try buf.appendSlice(allocator, "\n</section>\n</article>\n</body>\n</html>\n");
 
     return buf.toOwnedSlice(allocator);
 }
@@ -981,8 +1154,8 @@ pub const Storage = struct {
     fn scanResolve(self: *Self, dir: fs.Dir, states: []ResolveState) !void {
         var iter = dir.iterate();
         while (try iter.next()) |entry| {
-            if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".md")) {
-                const id = entry.name[0 .. entry.name.len - 3];
+            if (entry.kind == .file and hasIssueExt(entry.name)) {
+                const id = issueIdFromFilename(entry.name);
                 try self.addResolve(states, id);
             } else if (entry.kind == .directory and !std.mem.eql(u8, entry.name, "archive")) {
                 // Recurse into folder to resolve issue files
@@ -1003,31 +1176,29 @@ pub const Storage = struct {
     }
 
     fn findIssuePath(self: *Self, id: []const u8) ![]const u8 {
-        // Try direct file: .dots/{id}.md
         var path_buf: [MAX_PATH_LEN]u8 = undefined;
-        const direct_path = std.fmt.bufPrint(&path_buf, "{s}.md", .{id}) catch return StorageError.IoError;
 
-        if (self.dots_dir.statFile(direct_path)) |_| {
-            return self.allocator.dupe(u8, direct_path);
-        } else |_| {}
+        inline for (.{ ISSUE_EXT, LEGACY_ISSUE_EXT }) |ext| {
+            const direct_path = std.fmt.bufPrint(&path_buf, "{s}{s}", .{ id, ext }) catch return StorageError.IoError;
+            if (self.dots_dir.statFile(direct_path)) |_| {
+                return self.allocator.dupe(u8, direct_path);
+            } else |_| {}
 
-        // Try folder: .dots/{id}/{id}.md
-        const folder_path = std.fmt.bufPrint(&path_buf, "{s}/{s}.md", .{ id, id }) catch return StorageError.IoError;
-        if (self.dots_dir.statFile(folder_path)) |_| {
-            return self.allocator.dupe(u8, folder_path);
-        } else |_| {}
+            const folder_path = std.fmt.bufPrint(&path_buf, "{s}/{s}{s}", .{ id, id, ext }) catch return StorageError.IoError;
+            if (self.dots_dir.statFile(folder_path)) |_| {
+                return self.allocator.dupe(u8, folder_path);
+            } else |_| {}
 
-        // Try in archive: .dots/archive/{id}.md
-        const archive_path = std.fmt.bufPrint(&path_buf, "archive/{s}.md", .{id}) catch return StorageError.IoError;
-        if (self.dots_dir.statFile(archive_path)) |_| {
-            return self.allocator.dupe(u8, archive_path);
-        } else |_| {}
+            const archive_path = std.fmt.bufPrint(&path_buf, "archive/{s}{s}", .{ id, ext }) catch return StorageError.IoError;
+            if (self.dots_dir.statFile(archive_path)) |_| {
+                return self.allocator.dupe(u8, archive_path);
+            } else |_| {}
 
-        // Try archive folder: .dots/archive/{id}/{id}.md
-        const archive_folder_path = std.fmt.bufPrint(&path_buf, "archive/{s}/{s}.md", .{ id, id }) catch return StorageError.IoError;
-        if (self.dots_dir.statFile(archive_folder_path)) |_| {
-            return self.allocator.dupe(u8, archive_folder_path);
-        } else |_| {}
+            const archive_folder_path = std.fmt.bufPrint(&path_buf, "archive/{s}/{s}{s}", .{ id, id, ext }) catch return StorageError.IoError;
+            if (self.dots_dir.statFile(archive_folder_path)) |_| {
+                return self.allocator.dupe(u8, archive_folder_path);
+            } else |_| {}
+        }
 
         // Search recursively in all subdirectories
         return try self.searchForIssue(self.dots_dir, id) orelse StorageError.IssueNotFound;
@@ -1053,13 +1224,15 @@ pub const Storage = struct {
                 };
                 defer subdir.close();
 
-                // Check for {id}.md in this directory
+                // Check for issue files in this directory
                 var path_buf: [MAX_PATH_LEN]u8 = undefined;
-                const filename = std.fmt.bufPrint(&path_buf, "{s}.md", .{id}) catch return StorageError.IoError;
-                if (subdir.statFile(filename)) |_| {
-                    const full_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ entry.name, filename });
-                    return full_path;
-                } else |_| {}
+                inline for (.{ ISSUE_EXT, LEGACY_ISSUE_EXT }) |ext| {
+                    const filename = std.fmt.bufPrint(&path_buf, "{s}{s}", .{ id, ext }) catch return StorageError.IoError;
+                    if (subdir.statFile(filename)) |_| {
+                        const full_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ entry.name, filename });
+                        return full_path;
+                    } else |_| {}
+                }
 
                 // Recurse with depth limit
                 if (try self.searchForIssueWithDepth(subdir, id, depth + 1)) |path| {
@@ -1095,10 +1268,14 @@ pub const Storage = struct {
         const content = try file.readToEndAlloc(self.allocator, MAX_ISSUE_FILE_SIZE);
         defer self.allocator.free(content);
 
-        const parsed = try parseFrontmatter(self.allocator, content);
-        // Free allocated_title after duping
+        const parsed = try parseIssueDocument(self.allocator, content);
         defer if (parsed.allocated_title) |t| self.allocator.free(t);
-        // Free allocated_blocks on error (transferred to Issue on success)
+        defer if (parsed.allocated_issue_type) |s| self.allocator.free(s);
+        defer if (parsed.allocated_assignee) |s| self.allocator.free(s);
+        defer if (parsed.allocated_created_at) |s| self.allocator.free(s);
+        defer if (parsed.allocated_closed_at) |s| self.allocator.free(s);
+        defer if (parsed.allocated_close_reason) |s| self.allocator.free(s);
+        defer if (parsed.allocated_description) |s| self.allocator.free(s);
         var blocks_transferred = false;
         errdefer if (!blocks_transferred) {
             for (parsed.allocated_blocks) |b| self.allocator.free(b);
@@ -1152,8 +1329,8 @@ pub const Storage = struct {
     }
 
     fn extractParentFromPath(self: *Self, path: []const u8) !?[]const u8 {
-        // Path like "parent_id/child_id.md" means parent_id is the parent
-        // Path like "child_id.md" means no parent
+        // Path like "parent_id/child_id.html" means parent_id is the parent
+        // Path like "child_id.html" means no parent
         const slash_idx = std.mem.indexOf(u8, path, "/");
         if (slash_idx) |idx| {
             const potential_parent = path[0..idx];
@@ -1167,9 +1344,9 @@ pub const Storage = struct {
                 }
                 return null;
             }
-            // Check if this is parent/parent.md (self) or parent/child.md
+            // Check if this is parent/parent.html (self) or parent/child.html
             const filename = std.fs.path.basename(path);
-            const file_id = filename[0 .. filename.len - 3]; // strip .md
+            const file_id = issueIdFromFilename(filename); // strip .html
             if (!std.mem.eql(u8, file_id, potential_parent)) {
                 return try self.allocator.dupe(u8, potential_parent);
             }
@@ -1190,24 +1367,24 @@ pub const Storage = struct {
             return StorageError.IssueAlreadyExists;
         }
 
-        const content = try serializeFrontmatter(self.allocator, issue);
+        const content = try serializeIssueDocument(self.allocator, issue);
         defer self.allocator.free(content);
 
         var path_buf: [MAX_PATH_LEN]u8 = undefined;
         const path = if (parent_id) |pid| blk: {
             try self.ensureParentFolder(pid);
-            break :blk std.fmt.bufPrint(&path_buf, "{s}/{s}.md", .{ pid, issue.id }) catch return StorageError.IoError;
+            break :blk std.fmt.bufPrint(&path_buf, "{s}/{s}.html", .{ pid, issue.id }) catch return StorageError.IoError;
         } else blk: {
             // Check if a folder with this ID exists (child created before parent)
             const stat = self.dots_dir.statFile(issue.id) catch |err| switch (err) {
-                error.FileNotFound => break :blk std.fmt.bufPrint(&path_buf, "{s}.md", .{issue.id}) catch return StorageError.IoError,
+                error.FileNotFound => break :blk std.fmt.bufPrint(&path_buf, "{s}.html", .{issue.id}) catch return StorageError.IoError,
                 else => return err,
             };
             if (stat.kind == .directory) {
-                // Folder exists - write to {id}/{id}.md
-                break :blk std.fmt.bufPrint(&path_buf, "{s}/{s}.md", .{ issue.id, issue.id }) catch return StorageError.IoError;
+                // Folder exists - write to {id}/{id}.html
+                break :blk std.fmt.bufPrint(&path_buf, "{s}/{s}.html", .{ issue.id, issue.id }) catch return StorageError.IoError;
             }
-            break :blk std.fmt.bufPrint(&path_buf, "{s}.md", .{issue.id}) catch return StorageError.IoError;
+            break :blk std.fmt.bufPrint(&path_buf, "{s}.html", .{issue.id}) catch return StorageError.IoError;
         };
 
         try writeFileAtomic(self.dots_dir, path, content);
@@ -1215,18 +1392,23 @@ pub const Storage = struct {
 
     fn ensureParentFolder(self: *Self, parent_id: []const u8) !void {
         var path_buf: [MAX_PATH_LEN]u8 = undefined;
+        var legacy_path_buf: [MAX_PATH_LEN]u8 = undefined;
 
         // Check if parent is already a folder
         self.dots_dir.makeDir(parent_id) catch |err| switch (err) {
             error.PathAlreadyExists => {
-                // Folder exists - check if parent.md exists in root and move it
-                const old_path = std.fmt.bufPrint(&path_buf, "{s}.md", .{parent_id}) catch return StorageError.IoError;
+                // Folder exists - check if parent.html exists in root and move it
+                const old_path = std.fmt.bufPrint(&path_buf, "{s}.html", .{parent_id}) catch return StorageError.IoError;
+                const legacy_old_path = std.fmt.bufPrint(&legacy_path_buf, "{s}.md", .{parent_id}) catch return StorageError.IoError;
 
                 var new_path_buf: [MAX_PATH_LEN]u8 = undefined;
-                const new_path = std.fmt.bufPrint(&new_path_buf, "{s}/{s}.md", .{ parent_id, parent_id }) catch return StorageError.IoError;
+                const new_path = std.fmt.bufPrint(&new_path_buf, "{s}/{s}.html", .{ parent_id, parent_id }) catch return StorageError.IoError;
 
                 self.dots_dir.rename(old_path, new_path) catch |err2| switch (err2) {
-                    error.FileNotFound => {}, // Parent file not in root, already correct
+                    error.FileNotFound => self.dots_dir.rename(legacy_old_path, new_path) catch |err3| switch (err3) {
+                        error.FileNotFound => {}, // Parent file not in root, already correct
+                        else => return err3,
+                    },
                     else => return err2,
                 };
                 return;
@@ -1234,14 +1416,18 @@ pub const Storage = struct {
             else => return err,
         };
 
-        // Folder created - need to move parent.md into it
-        const old_path = std.fmt.bufPrint(&path_buf, "{s}.md", .{parent_id}) catch return StorageError.IoError;
+        // Folder created - need to move parent.html into it
+        const old_path = std.fmt.bufPrint(&path_buf, "{s}.html", .{parent_id}) catch return StorageError.IoError;
+        const legacy_old_path = std.fmt.bufPrint(&legacy_path_buf, "{s}.md", .{parent_id}) catch return StorageError.IoError;
 
         var new_path_buf: [MAX_PATH_LEN]u8 = undefined;
-        const new_path = std.fmt.bufPrint(&new_path_buf, "{s}/{s}.md", .{ parent_id, parent_id }) catch return StorageError.IoError;
+        const new_path = std.fmt.bufPrint(&new_path_buf, "{s}/{s}.html", .{ parent_id, parent_id }) catch return StorageError.IoError;
 
         self.dots_dir.rename(old_path, new_path) catch |err| switch (err) {
-            error.FileNotFound => {}, // Parent file doesn't exist yet, that's fine
+            error.FileNotFound => self.dots_dir.rename(legacy_old_path, new_path) catch |err2| switch (err2) {
+                error.FileNotFound => {}, // Parent file doesn't exist yet, that's fine
+                else => return err2,
+            },
             else => return err,
         };
     }
@@ -1275,7 +1461,7 @@ pub const Storage = struct {
         else
             null;
 
-        const content = try serializeFrontmatter(self.allocator, issue.withStatus(status, effective_closed_at, effective_close_reason));
+        const content = try serializeIssueDocument(self.allocator, issue.withStatus(status, effective_closed_at, effective_close_reason));
         defer self.allocator.free(content);
 
         try writeFileAtomic(self.dots_dir, path, content);
@@ -1318,8 +1504,8 @@ pub const Storage = struct {
 
             var iter = folder.iterate();
             while (try iter.next()) |entry| {
-                if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".md")) {
-                    const child_id = entry.name[0 .. entry.name.len - 3];
+                if (entry.kind == .file and hasIssueExt(entry.name)) {
+                    const child_id = issueIdFromFilename(entry.name);
                     if (std.mem.eql(u8, child_id, id)) continue; // Skip self
 
                     const child_issue = try self.getIssue(child_id) orelse continue;
@@ -1360,7 +1546,7 @@ pub const Storage = struct {
         if (std.mem.indexOf(u8, effective_path, "/")) |slash_idx| {
             const folder_name = effective_path[0..slash_idx];
             const filename = std.fs.path.basename(effective_path);
-            const file_id = filename[0 .. filename.len - 3];
+            const file_id = issueIdFromFilename(filename);
 
             // If deleting parent, delete entire folder
             if (std.mem.eql(u8, file_id, folder_name)) {
@@ -1391,8 +1577,8 @@ pub const Storage = struct {
         var it = folder.iterate();
         while (try it.next()) |entry| {
             if (entry.kind != .file) continue;
-            if (!std.mem.endsWith(u8, entry.name, ".md")) continue;
-            const child_id = entry.name[0 .. entry.name.len - 3];
+            if (!hasIssueExt(entry.name)) continue;
+            const child_id = issueIdFromFilename(entry.name);
             // Skip parent file (same name as folder)
             if (std.mem.eql(u8, child_id, folder_name)) continue;
             try self.removeDependencyReferences(child_id);
@@ -1441,20 +1627,20 @@ pub const Storage = struct {
             .parent = issue.parent,
         };
 
-        const content = try serializeFrontmatter(self.allocator, new_issue);
+        const content = try serializeIssueDocument(self.allocator, new_issue);
         defer self.allocator.free(content);
 
         if (is_parent) {
             // Parent issue: rename folder and file inside
             var new_path_buf: [MAX_PATH_LEN]u8 = undefined;
-            const new_path = std.fmt.bufPrint(&new_path_buf, "{s}/{s}.md", .{ new_id, new_id }) catch return StorageError.IoError;
+            const new_path = std.fmt.bufPrint(&new_path_buf, "{s}/{s}.html", .{ new_id, new_id }) catch return StorageError.IoError;
 
             // Rename folder first
             try self.dots_dir.rename(old_id, new_id);
 
             // Write new content to new path (old file was renamed with folder)
             var old_file_in_new_folder_buf: [MAX_PATH_LEN]u8 = undefined;
-            const old_file_in_new_folder = std.fmt.bufPrint(&old_file_in_new_folder_buf, "{s}/{s}.md", .{ new_id, old_id }) catch return StorageError.IoError;
+            const old_file_in_new_folder = std.fmt.bufPrint(&old_file_in_new_folder_buf, "{s}/{s}.html", .{ new_id, old_id }) catch return StorageError.IoError;
 
             // Write new file before deleting old
             try writeFileAtomic(self.dots_dir, new_path, content);
@@ -1466,9 +1652,9 @@ pub const Storage = struct {
             // Simple file or child: just rename
             var new_path_buf: [MAX_PATH_LEN]u8 = undefined;
             const new_path = if (issue.parent) |parent| blk: {
-                break :blk std.fmt.bufPrint(&new_path_buf, "{s}/{s}.md", .{ parent, new_id }) catch return StorageError.IoError;
+                break :blk std.fmt.bufPrint(&new_path_buf, "{s}/{s}.html", .{ parent, new_id }) catch return StorageError.IoError;
             } else blk: {
-                break :blk std.fmt.bufPrint(&new_path_buf, "{s}.md", .{new_id}) catch return StorageError.IoError;
+                break :blk std.fmt.bufPrint(&new_path_buf, "{s}.html", .{new_id}) catch return StorageError.IoError;
             };
 
             // Write new file first, then delete old
@@ -1522,7 +1708,7 @@ pub const Storage = struct {
             const path = try self.findIssuePath(issue.id);
             defer self.allocator.free(path);
 
-            const updated_content = try serializeFrontmatter(self.allocator, issue.withBlocks(blocks_slice));
+            const updated_content = try serializeIssueDocument(self.allocator, issue.withBlocks(blocks_slice));
             defer self.allocator.free(updated_content);
 
             try writeFileAtomic(self.dots_dir, path, updated_content);
@@ -1572,7 +1758,7 @@ pub const Storage = struct {
             const path = try self.findIssuePath(issue.id);
             defer self.allocator.free(path);
 
-            const content = try serializeFrontmatter(self.allocator, issue.withBlocks(blocks_slice));
+            const content = try serializeIssueDocument(self.allocator, issue.withBlocks(blocks_slice));
             defer self.allocator.free(content);
 
             try writeFileAtomic(self.dots_dir, path, content);
@@ -1620,8 +1806,8 @@ pub const Storage = struct {
     fn collectIssuesFromDir(self: *Self, dir: fs.Dir, prefix: []const u8, status_filter: ?Status, issues: *std.ArrayList(Issue)) !void {
         var iter = dir.iterate();
         while (try iter.next()) |entry| {
-            if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".md")) {
-                const id = entry.name[0 .. entry.name.len - 3];
+            if (entry.kind == .file and hasIssueExt(entry.name)) {
+                const id = issueIdFromFilename(entry.name);
                 var path_buf: [MAX_PATH_LEN]u8 = undefined;
                 const path = if (prefix.len > 0)
                     std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ prefix, entry.name }) catch return StorageError.IoError
@@ -1733,8 +1919,8 @@ pub const Storage = struct {
 
         var iter = folder.iterate();
         while (try iter.next()) |entry| {
-            if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".md")) continue;
-            const id = entry.name[0 .. entry.name.len - 3];
+            if (entry.kind != .file or !hasIssueExt(entry.name)) continue;
+            const id = issueIdFromFilename(entry.name);
             if (std.mem.eql(u8, id, folder_name)) continue;
 
             var path_buf: [MAX_PATH_LEN]u8 = undefined;
@@ -1763,9 +1949,9 @@ pub const Storage = struct {
         // Only collect from root level of .dots (not archive, not subdirs for children)
         var iter = self.dots_dir.iterate();
         while (try iter.next()) |entry| {
-            if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".md")) {
+            if (entry.kind == .file and hasIssueExt(entry.name)) {
                 if (issues) |list| {
-                    const id = entry.name[0 .. entry.name.len - 3];
+                    const id = issueIdFromFilename(entry.name);
                     const issue = self.readIssueFromPath(entry.name, id) catch |err| switch (err) {
                         StorageError.InvalidFrontmatter, StorageError.InvalidStatus => continue,
                         else => return err,
@@ -1780,7 +1966,7 @@ pub const Storage = struct {
             } else if (entry.kind == .directory and !std.mem.eql(u8, entry.name, "archive")) {
                 // Folder = parent issue
                 var path_buf: [MAX_PATH_LEN]u8 = undefined;
-                const path = std.fmt.bufPrint(&path_buf, "{s}/{s}.md", .{ entry.name, entry.name }) catch return StorageError.IoError;
+                const path = std.fmt.bufPrint(&path_buf, "{s}/{s}.html", .{ entry.name, entry.name }) catch return StorageError.IoError;
                 const issue = self.readIssueFromPath(path, entry.name) catch |err| switch (err) {
                     StorageError.InvalidFrontmatter, StorageError.InvalidStatus, error.FileNotFound => {
                         if (orphans) |list| {
@@ -1868,7 +2054,7 @@ pub const Storage = struct {
 
         var iter = folder.iterate();
         while (try iter.next()) |entry| {
-            if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".md")) continue;
+            if (entry.kind != .file or !hasIssueExt(entry.name)) continue;
 
             const name = try self.allocator.dupe(u8, entry.name);
             try names.append(self.allocator, name);
@@ -1918,8 +2104,8 @@ pub const Storage = struct {
 
         var iter = folder.iterate();
         while (try iter.next()) |entry| {
-            if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".md")) {
-                const id = entry.name[0 .. entry.name.len - 3];
+            if (entry.kind == .file and hasIssueExt(entry.name)) {
+                const id = issueIdFromFilename(entry.name);
                 if (std.mem.eql(u8, id, parent_id)) continue; // Skip parent itself
 
                 var path_buf: [MAX_PATH_LEN]u8 = undefined;
@@ -2089,7 +2275,7 @@ pub const Storage = struct {
                 self.allocator.free(blocks_slice);
             }
 
-            const content = try serializeFrontmatter(self.allocator, issue.withBlocks(blocks_slice));
+            const content = try serializeIssueDocument(self.allocator, issue.withBlocks(blocks_slice));
             defer self.allocator.free(content);
 
             try writeFileAtomic(self.dots_dir, path, content);

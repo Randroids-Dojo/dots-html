@@ -1,5 +1,5 @@
 #!/bin/bash
-# migrate-dots.sh - Convert .beads SQLite to .dots markdown
+# migrate-dots.sh - Convert .beads SQLite to .dots html
 # Requirements: sqlite3, jq
 set -eo pipefail
 
@@ -62,9 +62,9 @@ echo "Importing into .dots..."
 dot init --from-jsonl "$EXPORT_FILE"
 
 # Count all imported issues (main + archive)
-IMPORTED=$(find .dots -name "*.md" -type f 2>/dev/null | wc -l | tr -d ' ')
-ACTIVE=$(find .dots -maxdepth 2 -name "*.md" -type f ! -path ".dots/archive/*" 2>/dev/null | wc -l | tr -d ' ')
-ARCHIVED=$(find .dots/archive -name "*.md" -type f 2>/dev/null | wc -l | tr -d ' ')
+IMPORTED=$(find .dots -name "*.html" -type f 2>/dev/null | wc -l | tr -d ' ')
+ACTIVE=$(find .dots -maxdepth 2 -name "*.html" -type f ! -path ".dots/archive/*" 2>/dev/null | wc -l | tr -d ' ')
+ARCHIVED=$(find .dots/archive -name "*.html" -type f 2>/dev/null | wc -l | tr -d ' ')
 echo "Imported $IMPORTED issues ($ACTIVE active, $ARCHIVED archived)"
 
 # Verify by comparing total counts

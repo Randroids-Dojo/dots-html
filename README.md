@@ -2,11 +2,11 @@
 
 # dots
 
-> **Fast, minimal task tracking with plain markdown files — no database required**
+> **Fast, minimal task tracking with plain html files — no database required**
 
 Minimal task tracker for AI coding agents.
 
-| | beads (SQLite) | dots (markdown) |
+| | beads (SQLite) | dots (html) |
 |---|---:|---:|
 | Binary | 25 MB | **200 KB** (125x smaller) |
 | Lines of code | 115,000 | **2,800** (41x less) |
@@ -15,7 +15,7 @@ Minimal task tracker for AI coding agents.
 
 ## What is dots?
 
-A CLI task tracker with **zero dependencies** — tasks are plain markdown files with YAML frontmatter in `.dots/`. No database, no server, no configuration. Copy the folder between machines, commit to git, edit with any tool. Parent-child relationships map to folders. Each task has an ID, title, status, priority, and optional dependencies.
+A CLI task tracker with **zero dependencies** — tasks are plain HTML files with metadata tags in `.dots/`. No database, no server, no configuration. Copy the folder between machines, commit to git, edit with any tool. Parent-child relationships map to folders. Each task has an ID, title, status, priority, and optional dependencies.
 
 ## Contributing
 
@@ -87,7 +87,7 @@ dot "title"  # shorthand for: dot add "title"
 
 Options:
 - `-p N`: Priority 0-4 (0 = highest, default 2)
-- `-d "text"`: Long description (markdown body of the file)
+- `-d "text"`: Long description (html body of the file)
 - `-P ID`: Parent task ID (creates folder hierarchy)
 - `-a ID`: Blocked by task ID (dependency)
 - `--json`: Output created task as JSON
@@ -205,37 +205,47 @@ Permanently deletes all archived (completed) tasks from `.dots/archive/`.
 
 ## Storage Format
 
-Tasks are stored as markdown files with YAML frontmatter in `.dots/`:
+Tasks are stored as HTML files with metadata tags in `.dots/`:
 
 ```
 .dots/
-  a1b2c3d4e5f6a7b8.md              # Root dot (no children)
+  a1b2c3d4e5f6a7b8.html              # Root dot (no children)
   f9e8d7c6b5a49382/                # Parent with children
-    f9e8d7c6b5a49382.md            # Parent dot file
-    1a2b3c4d5e6f7890.md            # Child dot
+    f9e8d7c6b5a49382.html            # Parent dot file
+    1a2b3c4d5e6f7890.html            # Child dot
   archive/                          # Closed dots
-    oldtask12345678.md             # Archived root dot
+    oldtask12345678.html             # Archived root dot
     oldparent1234567/              # Archived tree
-      oldparent1234567.md
-      oldchild23456789.md
+      oldparent1234567.html
+      oldchild23456789.html
   config                            # ID prefix setting
 ```
 
 ### File Format
 
-```markdown
----
-title: Fix the bug
-status: open
-priority: 2
-issue-type: task
-assignee: joel
-created-at: 2024-12-24T10:30:00Z
-blocks:
-  - a3f2b1c8d9e04a7b
----
-
-Description as markdown body here.
+```html
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fix the bug</title>
+<meta name="dot-title" content="Fix the bug">
+<meta name="dot-status" content="open">
+<meta name="dot-priority" content="2">
+<meta name="dot-issue-type" content="task">
+<meta name="dot-assignee" content="joel">
+<meta name="dot-created-at" content="2024-12-24T10:30:00Z">
+<meta name="dot-block" content="a3f2b1c8d9e04a7b">
+</head>
+<body>
+<article>
+<h1>Fix the bug</h1>
+<section id="description">
+Description as HTML body here.
+</section>
+</article>
+</body>
+</html>
 ```
 
 ### ID Format
@@ -284,7 +294,7 @@ open -> active -> done (archived)
 ### Dependencies
 
 - `parent (-P)`: Creates folder hierarchy. Parent folder contains child files.
-- `blocks (-a)`: Stored in frontmatter. Task blocked until all blockers are `done`.
+- `blocks (-a)`: Stored in HTML metadata. Task blocked until all blockers are `done`.
 
 ### Archive Behavior
 
@@ -305,7 +315,7 @@ If you have existing tasks in `.beads/beads.db`, use the migration script:
 ./migrate-dots.sh
 ```
 
-This exports your tasks from SQLite and imports them as markdown files. The script verifies the migration was successful before prompting you to delete the old `.beads/` directory.
+This exports your tasks from SQLite and imports them as html files. The script verifies the migration was successful before prompting you to delete the old `.beads/` directory.
 
 Requirements: `sqlite3` and `jq` must be installed.
 
@@ -313,8 +323,8 @@ Requirements: `sqlite3` and `jq` must be installed.
 
 | Feature | Description |
 |---------|-------------|
-| Markdown files | Human-readable, git-friendly storage |
-| YAML frontmatter | Structured metadata with flexible body |
+| HTML files | Human-readable, git-friendly storage |
+| HTML metadata | Structured metadata with flexible body |
 | Folder hierarchy | Parent-child relationships as directories |
 | Short IDs | Type `a3f` instead of `dots-a3f2b1c8d9e04a7b` |
 | Archive | Completed tasks out of sight, available if needed |
