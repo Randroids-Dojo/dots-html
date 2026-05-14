@@ -123,7 +123,7 @@ test "slugify: prop: idempotent on valid slugs" {
     }.property, .{ .iterations = 50, .seed = 123 });
 }
 
-test "cli: slugify skips already-slugged issues from dot add" {
+test "cli: slugify skips already-slugged issues from dot-html add" {
     const allocator = std.testing.allocator;
     const oh = OhSnap{};
 
@@ -134,7 +134,7 @@ test "cli: slugify skips already-slugged issues from dot add" {
     const init = try runDot(allocator, &.{"init"}, test_dir);
     defer init.deinit(allocator);
 
-    // Create an issue - dot add already creates slugified IDs
+    // Create an issue - dot-html add already creates slugified IDs
     const add = try runDot(allocator, &.{ "add", "Fix authentication bug" }, test_dir);
     defer add.deinit(allocator);
 

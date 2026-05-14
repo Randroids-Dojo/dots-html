@@ -2,11 +2,11 @@
 
 # dots
 
-> **Fast, minimal task tracking with plain html files — no database required**
+> **Fast, minimal task tracking with plain HTML files — no database required**
 
 Minimal task tracker for AI coding agents.
 
-| | beads (SQLite) | dots (html) |
+| | beads (SQLite) | dots-html |
 |---|---:|---:|
 | Binary | 25 MB | **200 KB** (125x smaller) |
 | Lines of code | 115,000 | **2,800** (41x less) |
@@ -26,46 +26,46 @@ Please open an issue with the details of the feature you want, including the AI 
 ### Homebrew
 
 ```bash
-brew install joelreymont/tap/dots
+Use the GitHub release asset from Randroids-Dojo/dots-html, or build from source
 ```
 
 ### From source (requires Zig 0.15+)
 
 ```bash
-git clone https://github.com/joelreymont/dots.git
+git clone https://github.com/Randroids-Dojo/dots-html.git
 cd dots
 zig build -Doptimize=ReleaseSmall
-cp zig-out/bin/dot ~/.local/bin/
+cp zig-out/bin/dot-html ~/.local/bin/
 ```
 
 ### Verify installation
 
 ```bash
-dot --version
-# Output: dots 0.6.4
+dot-html --version
+# Output: dots 0.6.4-html.2
 ```
 
 ## Quick Start
 
 ```bash
 # Initialize in current directory
-dot init
+dot-html init
 # Creates: .dots/ directory (added to git if in repo)
 
 # Add a task
-dot add "Fix the login bug"
+dot-html add "Fix the login bug"
 # Output: dots-a1b2c3d4e5f6a7b8
 
 # List tasks
-dot ls
+dot-html ls
 # Output: [a1b2c3d] o Fix the login bug
 
 # Start working
-dot on a1b2c3d
+dot-html on a1b2c3d
 # Output: (none, task marked active)
 
 # Complete task
-dot off a1b2c3d -r "Fixed in commit abc123"
+dot-html off a1b2c3d -r "Fixed in commit abc123"
 # Output: (none, task marked done and archived)
 ```
 
@@ -74,15 +74,15 @@ dot off a1b2c3d -r "Fixed in commit abc123"
 ### Initialize
 
 ```bash
-dot init
+dot-html init
 ```
 Creates `.dots/` directory. Runs `git add .dots` if in a git repository. Safe to run if already exists.
 
 ### Add Task
 
 ```bash
-dot add "title" [-p PRIORITY] [-d "description"] [-P PARENT_ID] [-a AFTER_ID] [--json]
-dot "title"  # shorthand for: dot add "title"
+dot-html add "title" [-p PRIORITY] [-d "description"] [-P PARENT_ID] [-a AFTER_ID] [--json]
+dot-html "title"  # shorthand for: dot-html add "title"
 ```
 
 Options:
@@ -94,20 +94,20 @@ Options:
 
 Examples:
 ```bash
-dot add "Design API" -p 1
+dot-html add "Design API" -p 1
 # Output: dots-1a2b3c4d5e6f7890
 
-dot add "Implement API" -a dots-1a2b3c4d -d "REST endpoints for user management"
+dot-html add "Implement API" -a dots-1a2b3c4d -d "REST endpoints for user management"
 # Output: dots-3c4d5e6f7a8b9012
 
-dot add "Write tests" --json
+dot-html add "Write tests" --json
 # Output: {"id":"dots-5e6f7a8b9012cdef","title":"Write tests","status":"open","priority":2,...}
 ```
 
 ### List Tasks
 
 ```bash
-dot ls [--status STATUS] [--json]
+dot-html ls [--status STATUS] [--json]
 ```
 
 Options:
@@ -124,21 +124,21 @@ Output format (text):
 ### Start Working
 
 ```bash
-dot on <id> [id2 ...]
+dot-html on <id> [id2 ...]
 ```
 Marks task(s) as `active`. Use when you begin working on tasks. Supports short ID prefixes.
 
 ### Complete Task
 
 ```bash
-dot off <id> [id2 ...] [-r "reason"]
+dot-html off <id> [id2 ...] [-r "reason"]
 ```
 Marks task(s) as `done` and archives them. Optional reason applies to all. Root tasks are moved to `.dots/archive/`. Child tasks wait for parent to close before moving.
 
 ### Show Task Details
 
 ```bash
-dot show <id>
+dot-html show <id>
 ```
 
 Output:
@@ -154,21 +154,21 @@ Created:  2024-12-24T10:30:00Z
 ### Remove Task
 
 ```bash
-dot rm <id> [id2 ...]
+dot-html rm <id> [id2 ...]
 ```
 Permanently deletes task file(s). If removing a parent, children are also deleted.
 
 ### Show Ready Tasks
 
 ```bash
-dot ready [--json]
+dot-html ready [--json]
 ```
 Lists tasks that are `open` and have no blocking dependencies (or blocker is `done`).
 
 ### Show Hierarchy
 
 ```bash
-dot tree [id]
+dot-html tree [id]
 ```
 
 Without arguments: shows all open root dots and their children.
@@ -185,21 +185,21 @@ Output:
 ### Fix Orphans
 
 ```bash
-dot fix
+dot-html fix
 ```
 Promotes orphaned children to root and removes missing parent folders.
 
 ### Search Tasks
 
 ```bash
-dot find "query"
+dot-html find "query"
 ```
 Case-insensitive search across title, description, close-reason, created-at, and closed-at. Shows open dots first, then archived.
 
 ### Purge Archive
 
 ```bash
-dot purge
+dot-html purge
 ```
 Permanently deletes all archived (completed) tasks from `.dots/archive/`.
 
@@ -257,19 +257,19 @@ IDs have the format `{prefix}-{slug}-{hex}` where:
 
 Example: `dots-fix-user-auth-a3f2b1c8`
 
-The slug uses common abbreviations (authentication→auth, configuration→config, etc.) and truncates at word boundaries. Run `dot slugify` to rename existing IDs to include slugs.
+The slug uses common abbreviations (authentication→auth, configuration→config, etc.) and truncates at word boundaries. Run `dot-html slugify` to rename existing IDs to include slugs.
 
 Commands accept short prefixes:
 
 ```bash
-dot on a3f2b1    # Matches dots-fix-user-auth-a3f2b1c8
-dot show a3f     # Error if ambiguous (multiple matches)
+dot-html on a3f2b1    # Matches dots-fix-user-auth-a3f2b1c8
+dot-html show a3f     # Error if ambiguous (multiple matches)
 ```
 
 ### Slugify
 
 ```bash
-dot slugify
+dot-html slugify
 ```
 Renames all issue IDs (including archived) to include slugs based on their titles. Preserves the hex suffix and updates all dependency references.
 

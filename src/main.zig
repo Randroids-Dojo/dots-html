@@ -72,7 +72,7 @@ fn run() !void {
         } else if (std.mem.eql(u8, cmd, "hook")) {
             fatal("Unknown command: hook\n", .{});
         } else {
-            // Quick add: dot "title"
+            // Quick add: dot-html "title"
             try cmdAdd(allocator, args[1..]);
         }
     }
@@ -194,29 +194,29 @@ fn hasFlag(args: []const []const u8, flag: []const u8) bool {
 const USAGE =
     \\dots - Connect the dots
     \\
-    \\Usage: dot [command] [options]
+    \\Usage: dot-html [command] [options]
     \\
     \\Commands:
-    \\  dot "title"                  Quick add a dot
-    \\  dot add "title" [options]    Add a dot (-p priority, -d desc, -P parent, -a after)
-    \\  dot ls [--status S] [--json] List dots
-    \\  dot on <id>                  Start working (turn it on!)
-    \\  dot off <id> [-r reason]     Complete ("cross it off")
-    \\  dot rm <id>                  Remove a dot
-    \\  dot show <id>                Show dot details
-    \\  dot ready [--json]           Show unblocked dots
-    \\  dot tree [id]                Show hierarchy (with id: includes closed children)
-    \\  dot fix                      Repair missing parents
-    \\  dot find "query"             Search all dots (open first, then archived)
-    \\  dot purge                    Delete archived dots
-    \\  dot init                     Initialize .dots directory
+    \\  dot-html "title"                  Quick add a dot
+    \\  dot-html add "title" [options]    Add a dot (-p priority, -d desc, -P parent, -a after)
+    \\  dot-html ls [--status S] [--json] List dots
+    \\  dot-html on <id>                  Start working (turn it on!)
+    \\  dot-html off <id> [-r reason]     Complete ("cross it off")
+    \\  dot-html rm <id>                  Remove a dot
+    \\  dot-html show <id>                Show dot details
+    \\  dot-html ready [--json]           Show unblocked dots
+    \\  dot-html tree [id]                Show hierarchy (with id: includes closed children)
+    \\  dot-html fix                      Repair missing parents
+    \\  dot-html find "query"             Search all dots (open first, then archived)
+    \\  dot-html purge                    Delete archived dots
+    \\  dot-html init                     Initialize .dots directory
     \\
     \\Examples:
-    \\  dot "Fix the bug"
-    \\  dot add "Design API" -p 1 -d "REST endpoints"
-    \\  dot add "Implement" -P dots-1 -a dots-2
-    \\  dot on dots-3
-    \\  dot off dots-3 -r "shipped"
+    \\  dot-html "Fix the bug"
+    \\  dot-html add "Design API" -p 1 -d "REST endpoints"
+    \\  dot-html add "Implement" -P dots-1 -a dots-2
+    \\  dot-html on dots-3
+    \\  dot-html off dots-3 -r "shipped"
     \\
 ;
 
@@ -260,7 +260,7 @@ fn cmdInit(allocator: Allocator, args: []const []const u8) !void {
 }
 
 fn cmdAdd(allocator: Allocator, args: []const []const u8) !void {
-    if (args.len == 0) fatal("Usage: dot add <title> [options]\n", .{});
+    if (args.len == 0) fatal("Usage: dot-html add <title> [options]\n", .{});
 
     var title: []const u8 = "";
     var description: []const u8 = "";
@@ -404,7 +404,7 @@ fn writeIssueList(issues: []const Issue, skip_done: bool, use_json: bool) !void 
 }
 
 fn cmdOn(allocator: Allocator, args: []const []const u8) !void {
-    if (args.len == 0) fatal("Usage: dot on <id> [id2 ...]\n", .{});
+    if (args.len == 0) fatal("Usage: dot-html on <id> [id2 ...]\n", .{});
 
     var storage = try openStorage(allocator);
     defer storage.close();
@@ -422,7 +422,7 @@ fn cmdOn(allocator: Allocator, args: []const []const u8) !void {
 }
 
 fn cmdOff(allocator: Allocator, args: []const []const u8) !void {
-    if (args.len == 0) fatal("Usage: dot off <id> [id2 ...] [-r reason]\n", .{});
+    if (args.len == 0) fatal("Usage: dot-html off <id> [id2 ...] [-r reason]\n", .{});
 
     var reason: ?[]const u8 = null;
     var ids: std.ArrayList([]const u8) = .{};
@@ -437,7 +437,7 @@ fn cmdOff(allocator: Allocator, args: []const []const u8) !void {
         }
     }
 
-    if (ids.items.len == 0) fatal("Usage: dot off <id> [id2 ...] [-r reason]\n", .{});
+    if (ids.items.len == 0) fatal("Usage: dot-html off <id> [id2 ...] [-r reason]\n", .{});
 
     var storage = try openStorage(allocator);
     defer storage.close();
@@ -461,7 +461,7 @@ fn cmdOff(allocator: Allocator, args: []const []const u8) !void {
 }
 
 fn cmdRm(allocator: Allocator, args: []const []const u8) !void {
-    if (args.len == 0) fatal("Usage: dot rm <id> [id2 ...]\n", .{});
+    if (args.len == 0) fatal("Usage: dot-html rm <id> [id2 ...]\n", .{});
 
     var storage = try openStorage(allocator);
     defer storage.close();
@@ -479,7 +479,7 @@ fn cmdRm(allocator: Allocator, args: []const []const u8) !void {
 }
 
 fn cmdShow(allocator: Allocator, args: []const []const u8) !void {
-    if (args.len == 0) fatal("Usage: dot show <id>\n", .{});
+    if (args.len == 0) fatal("Usage: dot-html show <id>\n", .{});
 
     var storage = try openStorage(allocator);
     defer storage.close();
@@ -507,7 +507,7 @@ fn cmdTree(allocator: Allocator, args: []const []const u8) !void {
     if (hasFlag(args, "--help") or hasFlag(args, "-h")) {
         const w = stdout();
         try w.writeAll(
-            \\Usage: dot tree [id]
+            \\Usage: dot-html tree [id]
             \\
             \\Show dot hierarchy.
             \\
@@ -515,13 +515,13 @@ fn cmdTree(allocator: Allocator, args: []const []const u8) !void {
             \\With id: shows that specific dot's tree (including closed children).
             \\
             \\Examples:
-            \\  dot tree                    Show all open root dots
-            \\  dot tree my-project         Show specific dot and its children
+            \\  dot-html tree                    Show all open root dots
+            \\  dot-html tree my-project         Show specific dot and its children
             \\
         );
         return;
     }
-    if (args.len > 1) fatal("Usage: dot tree [id]\n", .{});
+    if (args.len > 1) fatal("Usage: dot-html tree [id]\n", .{});
 
     var storage = try openStorage(allocator);
     defer storage.close();
@@ -592,15 +592,15 @@ fn cmdFind(allocator: Allocator, args: []const []const u8) !void {
     if (args.len == 0 or hasFlag(args, "--help") or hasFlag(args, "-h")) {
         const w = stdout();
         try w.writeAll(
-            \\Usage: dot find <query>
+            \\Usage: dot-html find <query>
             \\
             \\Search all dots (open first, then archived).
             \\
             \\Searches: title, description, close-reason, created-at, closed-at
             \\
             \\Examples:
-            \\  dot find "auth"      Search for dots mentioning auth
-            \\  dot find "2026-01"   Find dots from January 2026
+            \\  dot-html find "auth"      Search for dots mentioning auth
+            \\  dot-html find "2026-01"   Find dots from January 2026
             \\
         );
         return;
@@ -626,7 +626,7 @@ fn cmdFind(allocator: Allocator, args: []const []const u8) !void {
 }
 
 fn cmdUpdate(allocator: Allocator, args: []const []const u8) !void {
-    if (args.len == 0) fatal("Usage: dot update <id> [--status S]\n", .{});
+    if (args.len == 0) fatal("Usage: dot-html update <id> [--status S]\n", .{});
 
     var new_status: ?Status = null;
     var i: usize = 1;
@@ -652,7 +652,7 @@ fn cmdUpdate(allocator: Allocator, args: []const []const u8) !void {
 }
 
 fn cmdClose(allocator: Allocator, args: []const []const u8) !void {
-    if (args.len == 0) fatal("Usage: dot close <id> [--reason R]\n", .{});
+    if (args.len == 0) fatal("Usage: dot-html close <id> [--reason R]\n", .{});
 
     var reason: ?[]const u8 = null;
     var i: usize = 1;

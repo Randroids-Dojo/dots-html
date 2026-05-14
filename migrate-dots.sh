@@ -6,7 +6,7 @@ set -eo pipefail
 # Check for required tools
 command -v sqlite3 >/dev/null 2>&1 || { echo "Error: sqlite3 is required but not installed."; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "Error: jq is required but not installed."; exit 1; }
-command -v dot >/dev/null 2>&1 || { echo "Error: dot CLI is required but not installed."; exit 1; }
+command -v dot-html >/dev/null 2>&1 || { echo "Error: dot-html CLI is required but not installed."; exit 1; }
 
 # Check for beads database
 if [ ! -f .beads/beads.db ]; then
@@ -59,7 +59,7 @@ fi
 
 # Import into new dots
 echo "Importing into .dots..."
-dot init --from-jsonl "$EXPORT_FILE"
+dot-html init --from-jsonl "$EXPORT_FILE"
 
 # Count all imported issues (main + archive)
 IMPORTED=$(find .dots -name "*.html" -type f 2>/dev/null | wc -l | tr -d ' ')

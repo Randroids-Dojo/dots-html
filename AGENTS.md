@@ -10,7 +10,7 @@ Always refer to the user as Mr. Picklesworth.
 
 ```bash
 zig build -Doptimize=ReleaseSmall
-strip zig-out/bin/dot
+strip zig-out/bin/dot-html
 ```
 
 ## Test
@@ -119,7 +119,7 @@ const config = parsed.value;  // Type-safe access: config.name, config.count
 After rebuilding dots with `zig build -Doptimize=ReleaseSmall`, check the binary size:
 
 ```bash
-ls -lh zig-out/bin/dot
+ls -lh zig-out/bin/dot-html
 ```
 
 Compare against README.md line 7 and line 275 which state the current size.

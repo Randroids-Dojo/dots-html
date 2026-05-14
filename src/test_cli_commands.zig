@@ -206,15 +206,15 @@ test "cli: find help" {
     const oh = OhSnap{};
     try oh.snap(@src(),
         \\[]u8
-        \\  "Usage: dot find <query>
+        \\  "Usage: dot-html find <query>
         \\
         \\Search all dots (open first, then archived).
         \\
         \\Searches: title, description, close-reason, created-at, closed-at
         \\
         \\Examples:
-        \\  dot find "auth"      Search for dots mentioning auth
-        \\  dot find "2026-01"   Find dots from January 2026
+        \\  dot-html find "auth"      Search for dots mentioning auth
+        \\  dot-html find "2026-01"   Find dots from January 2026
         \\"
     ).expectEqual(help.stdout);
     try oh.snap(@src(),
@@ -525,7 +525,7 @@ test "cli: tree help" {
     const oh = OhSnap{};
     try oh.snap(@src(),
         \\[]u8
-        \\  "Usage: dot tree [id]
+        \\  "Usage: dot-html tree [id]
         \\
         \\Show dot hierarchy.
         \\
@@ -533,8 +533,8 @@ test "cli: tree help" {
         \\With id: shows that specific dot's tree (including closed children).
         \\
         \\Examples:
-        \\  dot tree                    Show all open root dots
-        \\  dot tree my-project         Show specific dot and its children
+        \\  dot-html tree                    Show all open root dots
+        \\  dot-html tree my-project         Show specific dot and its children
         \\"
     ).expectEqual(help.stdout);
     try oh.snap(@src(),

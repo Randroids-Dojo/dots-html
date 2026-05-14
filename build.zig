@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const version = "0.6.4-html.1";
+const version = "0.6.4-html.2";
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
     const git_hash = std.mem.trim(u8, b.run(&.{ "git", "rev-parse", "--short", "HEAD" }), "\n\r ");
 
     const exe = b.addExecutable(.{
-        .name = "dot",
+        .name = "dot-html",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -34,12 +34,12 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run dot");
+    const run_step = b.step("run", "Run dot-html");
     run_step.dependOn(&run_cmd.step);
 
     // Tests - pass binary path as build option
     const install_prefix = b.install_prefix;
-    const dot_path = b.fmt("{s}/bin/dot", .{install_prefix});
+    const dot_path = b.fmt("{s}/bin/dot-html", .{install_prefix});
 
     const test_options = b.addOptions();
     test_options.addOption([]const u8, "dot_binary", dot_path);
