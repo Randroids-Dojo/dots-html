@@ -31,7 +31,7 @@ jobs:
       - name: Build Release
         run: |
           zig build -Doptimize=ReleaseSmall
-          strip zig-out/bin/dot || true
+          strip zig-out/bin/dot-html || true
 
       - name: Verify binary
-        run: ./zig-out/bin/dot --version
+        run: ./zig-out/bin/dot-html --version
