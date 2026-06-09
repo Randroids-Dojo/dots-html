@@ -319,3 +319,29 @@ test "storage: invalid block id rejected" {
     const result = ts.storage.getIssue("bad-blocks");
     try std.testing.expectError(error.InvalidFrontmatter, result);
 }
+
+test "storage: pending status parsed as open (FluxPanel alias)" {
+    const allocator = std.testing.allocator;
+
+    const test_dir = setupTestDirOrPanic(allocator);
+    defer cleanupTestDirAndFree(allocator, test_dir);
+
+    var ts = openTestStorage(allocator, test_dir);
+    defer ts.deinit();
+
+    // FluxPanel writes status: pending; it must read back as open, not be rejected.
+    const pending_dot =
+        \\---
+        \\title: Pending dot
+        \\status: pending
+        \\priority: 2
+        \\issue-type: task
+        \\created-at: 2024-01-01T00:00:00Z
+        \\---
+    ;
+    try ts.storage.dots_dir.writeFile(.{ .sub_path = "pending-dot.html", .data = pending_dot });
+
+    const issue = try ts.storage.getIssue("pending-dot") orelse return error.TestUnexpectedResult;
+    defer issue.deinit(allocator);
+    try std.testing.expectEqual(Status.open, issue.status);
+}

@@ -85,6 +85,7 @@ pub const Status = enum {
         .{ "active", .active },
         .{ "closed", .closed },
         .{ "done", .closed }, // alias
+        .{ "pending", .open }, // alias for FluxPanel-authored dots
     });
 
     pub fn parse(s: []const u8) ?Status {
