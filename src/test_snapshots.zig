@@ -78,31 +78,30 @@ test "snap: html document format" {
         }
     }
 
-    const oh = OhSnap{};
-    try oh.snap(@src(),
-        \\[]u8
-        \\  "<!doctype html>
+    const expected =
+        \\<!doctype html>
         \\<html>
         \\<head>
-        \\<meta charset=\"utf-8\">
+        \\<meta charset="utf-8">
         \\<title>Test snapshot task</title>
-        \\<meta name=\"dot-title\" content=\"Test snapshot task\">
-        \\<meta name=\"dot-status\" content=\"open\">
-        \\<meta name=\"dot-priority\" content=\"1\">
-        \\<meta name=\"dot-issue-type\" content=\"task\">
-        \\<meta name=\"dot-created-at\" content=\"<TIMESTAMP>\">
+        \\<meta name="dot-title" content="Test snapshot task">
+        \\<meta name="dot-status" content="open">
+        \\<meta name="dot-priority" content="1">
+        \\<meta name="dot-issue-type" content="task">
+        \\<meta name="dot-created-at" content="<TIMESTAMP>">
         \\</head>
         \\<body>
         \\<article>
         \\<h1>Test snapshot task</h1>
-        \\<section id=\"description\">
+        \\<section id="description">
         \\This is a description
         \\</section>
         \\</article>
         \\</body>
         \\</html>
-        \\"
-    ).expectEqual(normalized.items);
+        \\
+    ;
+    try std.testing.expectEqualStrings(expected, normalized.items);
 }
 
 test "snap: json output format" {
